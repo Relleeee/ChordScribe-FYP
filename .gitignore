@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+.venv/
+__pycache__/
+
+# next.js
+web/.next/
+web/out/
+web/next-env.d.ts
+
+# prisma / sqlite (schema + migrations are committed; the local db is not)
+web/prisma/dev.db
+web/prisma/dev.db-journal
+web/src/generated/
+
+# env
+.env
+.env.local
+.env*.local
+
+# python
+*.pyc
+.pytest_cache/
+.ruff_cache/
+engine/chordscribe_*/
+
+# misc
+.DS_Store
+*.log
+
+# local media / scratch
+*.wav
+*.mp3
+*.mp4
+!web/public/**

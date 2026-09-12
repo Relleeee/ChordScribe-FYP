@@ -1,0 +1,31 @@
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pydantic>=2.7
+numpy>=1.26
+scipy>=1.11
+librosa>=0.10.2
+soundfile>=0.12
+yt-dlp>=2024.8.0
+# Static ffmpeg fallback used when the host has none on PATH (see ffmpeg_setup.py)
+imageio-ffmpeg>=0.5.1
+
+# --- BTC chord model (CHORD_BACKEND=btc, the default) ---
+pyyaml>=6.0
+mir_eval>=0.7
+
+# CPU-only Torch keeps the install small. If pip pulls a CUDA build, instead run:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+torch>=2.2
+
+# --- Optional vocal transcription (POST /transcribe) ---
+# Only needed for the Lyrics-view "Transcribe from audio" button. Model weights
+# (~145 MB for "base") download on first use. Override size with WHISPER_MODEL.
+faster-whisper>=1.0
+
+# --- Optional note transcription for guitar tab (POST /tab) ---
+# basic-pitch does polyphonic note transcription; we run its bundled ONNX model
+# (onnxruntime comes in above via faster-whisper). basic-pitch pins an old
+# TensorFlow it doesn't need for ONNX inference, so install it without deps:
+#   pip install --no-deps basic-pitch
+#   pip install pretty_midi "resampy>=0.2.2,<0.4.3"

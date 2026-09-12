@@ -1,0 +1,80 @@
+// ChordScribe database schema. SQLite for local dev / phone testing.
+// Regenerate the client after edits:  npx prisma migrate dev
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String
+  password      String? // bcrypt hash — null for accounts created via OAuth only
+  image         String? // avatar URL from an OAuth provider
+  emailVerified DateTime?
+  termsAgreedAt DateTime?
+  createdAt     DateTime       @default(now())
+  analyses      Analysis[]
+  oauthAccounts OAuthAccount[]
+}
+
+model OAuthAccount {
+  id                String   @id @default(cuid())
+  provider          String // "google" | "facebook"
+  providerAccountId String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String
+  createdAt         DateTime @default(now())
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+/// One-time email codes: 6-digit login OTPs and password-reset link tokens.
+model VerificationCode {
+  id         String   @id @default(cuid())
+  identifier String // the email address
+  tokenHash  String // sha256 of the code/token — never store the raw value
+  purpose    String // "email-otp" | "password-reset"
+  attempts   Int      @default(0)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([identifier, purpose])
+}
+
+model Analysis {
+  id          String   @id @default(cuid())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  title       String
+  sourceKind  String // "upload" | "youtube"
+  sourceRef   String
+  durationSec Float
+  bpm         Float?
+  musicalKey  String?
+  // User-supplied lyrics for the chord sheet (not auto-transcribed).
+  lyrics      String?
+  // JSON: manual chord↔lyric placements for the Lyrics view, keyed by segment
+  // start time so they survive transpose. Null => auto-align. See lib/types.ts.
+  lyricAlignment String?
+  // JSON: [{t,w}] word timings from the engine's Whisper transcription, used to
+  // place chords over the right word. Null => lyrics were never transcribed.
+  lyricWords     String?
+  // JSON {ascii,tuning,noteCount}: guitar tab transcribed from the audio with
+  // basic-pitch. Null => tab was never generated. See lib/types.ts::TabData.
+  tab            String?
+  // Guitar tuning for the diagrams/tab — a preset id ("standard", "drop-d", …)
+  // or a custom "e,a,d,g,b,e" spec. Null => standard. See lib/tuning.ts.
+  tuning      String?
+  // Full AnalysisResult, serialised — see web/src/lib/types.ts
+  result      String
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
