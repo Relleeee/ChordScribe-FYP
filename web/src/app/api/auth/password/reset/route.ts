@@ -1,15 +1,20 @@
 import { prisma } from "@/lib/db";
 import { createSession, hashPassword } from "@/lib/auth";
-import { consumeResetToken } from "@/lib/verification";
+import { OTP_MESSAGES, verifyOtp } from "@/lib/verification";
 import { MIN_PASSWORD } from "@/lib/validate";
 
 export async function POST(request: Request): Promise<Response> {
   const body = (await request.json().catch(() => null)) as
-    | { token?: string; password?: string }
+    | { email?: string; code?: string; password?: string }
     | null;
-  const token = body?.token ?? "";
+  const email = body?.email?.trim().toLowerCase() ?? "";
+  const code = body?.code?.trim() ?? "";
   const password = body?.password ?? "";
 
+  if (!email || !/^\d{6}$/.test(code)) {
+    return Response.json({ error: "Enter the 6-digit code" }, { status: 400 });
+  }
+  // Checked before the code so a too-short password doesn't burn a valid code.
   if (password.length < MIN_PASSWORD) {
     return Response.json(
       { error: `Password must be at least ${MIN_PASSWORD} characters` },
@@ -17,9 +22,9 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const email = await consumeResetToken(token);
-  if (!email) {
-    return Response.json({ error: "This reset link is invalid or has expired" }, { status: 400 });
+  const result = await verifyOtp(email, code, "password-reset-otp");
+  if (!result.ok) {
+    return Response.json({ error: OTP_MESSAGES[result.reason] }, { status: 400 });
   }
 
   const user = await prisma.user.update({

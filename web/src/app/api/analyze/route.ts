@@ -24,13 +24,18 @@ export async function POST(request: NextRequest): Promise<Response> {
     let result: AnalysisResult;
 
     if (contentType.includes("application/json")) {
-      const body = (await request.json().catch(() => null)) as { youtube_url?: string } | null;
+      const body = (await request.json().catch(() => null)) as {
+        youtube_url?: string;
+        highAccuracy?: boolean;
+      } | null;
       const url = body?.youtube_url?.trim();
       if (!url) return bad(400, "Missing 'youtube_url'");
       if (!/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(url)) {
         return bad(400, "Not a recognised YouTube URL");
       }
-      result = ENGINE_MOCK ? MOCK_RESULT : await analyzeYouTube(url);
+      result = ENGINE_MOCK
+        ? MOCK_RESULT
+        : await analyzeYouTube(url, { highAccuracy: body?.highAccuracy === true });
     } else if (contentType.includes("multipart/form-data")) {
       const form = await request.formData();
       const file = form.get("file");
@@ -39,7 +44,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       if (file.size > MAX_UPLOAD_BYTES) {
         return bad(413, `File exceeds ${MAX_UPLOAD_BYTES / 1024 / 1024} MB limit`);
       }
-      result = ENGINE_MOCK ? MOCK_RESULT : await analyzeUpload(file);
+      result = ENGINE_MOCK
+        ? MOCK_RESULT
+        : await analyzeUpload(file, { highAccuracy: form.get("highAccuracy") === "1" });
     } else {
       return bad(415, "Send JSON ({ youtube_url }) or multipart/form-data ({ file })");
     }

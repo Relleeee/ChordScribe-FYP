@@ -1,10 +1,11 @@
 /**
  * Chord transposition + capo helpers.
  *
- * The engine only emits major (`"C"`) and minor (`"Cm"`) triads plus `"N"`, but
- * these parse any `A–G` root with an optional `#`/`b` and keep whatever suffix
- * follows, so they're safe if the vocabulary grows.
+ * Labels parse as an `A–G` root with an optional `#`/`b`; whatever suffix follows
+ * (`m`, `7`, `maj7`, `sus4`, …) is kept as-is, so any engine vocabulary transposes.
  */
+
+import { hasOpenShape } from "./chordShapes";
 
 const SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 const FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
@@ -44,8 +45,6 @@ export function transposeKey(
   return `${transposeChord(m[1], semitones, preferFlats)} ${m[2].toLowerCase()}`;
 }
 
-// Chords a beginner can play in open position. Suggestions steer toward these.
-const OPEN_SHAPES = new Set(["C", "D", "E", "G", "A", "Am", "Dm", "Em"]);
 
 export interface CapoSuggestion {
   /** Fret to clamp the capo at (0 = none). */
@@ -61,7 +60,8 @@ export interface CapoSuggestion {
 
 function suggestionAt(distinct: string[], key: string | null, fret: number): CapoSuggestion {
   const shapes = distinct.map((c) => transposeChord(c, -fret));
-  const openCount = shapes.filter((c) => OPEN_SHAPES.has(c)).length;
+  // A chord counts as "open" if it has a hand-tuned no-barre voicing.
+  const openCount = shapes.filter(hasOpenShape).length;
   return {
     fret,
     shapes,

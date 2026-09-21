@@ -11,6 +11,7 @@ export function AnalyzeForm({ onResult }: { onResult: (result: SavedAnalysis) =>
   const [tab, setTab] = useState<Tab>("youtube");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [highAccuracy, setHighAccuracy] = useState(false);
   const [status, setStatus] = useState<AnalysisStatus>("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -26,13 +27,14 @@ export function AnalyzeForm({ onResult }: { onResult: (result: SavedAnalysis) =>
         res = await fetch("/api/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ youtube_url: youtubeUrl.trim() }),
+          body: JSON.stringify({ youtube_url: youtubeUrl.trim(), highAccuracy }),
         });
       } else {
         if (!file) return;
         setStatus("uploading");
         const form = new FormData();
         form.append("file", file);
+        if (highAccuracy) form.append("highAccuracy", "1");
         res = await fetch("/api/analyze", { method: "POST", body: form });
       }
 
@@ -92,6 +94,22 @@ export function AnalyzeForm({ onResult }: { onResult: (result: SavedAnalysis) =>
           )}
         </label>
       )}
+
+      <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={highAccuracy}
+          onChange={(e) => setHighAccuracy(e.target.checked)}
+          className="mt-0.5 accent-[var(--accent)]"
+        />
+        <span>
+          <span className="font-medium">High-accuracy mode</span>
+          <span className="block text-xs text-foreground/50">
+            Separates the drums and vocals first so chords and key are read from the guitar and
+            keys alone. Better on full-band songs; takes a few minutes longer.
+          </span>
+        </span>
+      </label>
 
       <button
         type="button"

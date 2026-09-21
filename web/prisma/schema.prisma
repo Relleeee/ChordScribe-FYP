@@ -35,12 +35,12 @@ model OAuthAccount {
   @@index([userId])
 }
 
-/// One-time email codes: 6-digit login OTPs and password-reset link tokens.
+/// One-time 6-digit email codes: sign-in OTPs and password-reset OTPs.
 model VerificationCode {
   id         String   @id @default(cuid())
   identifier String // the email address
   tokenHash  String // sha256 of the code/token — never store the raw value
-  purpose    String // "email-otp" | "password-reset"
+  purpose    String // "email-otp" | "password-reset-otp"
   attempts   Int      @default(0)
   expiresAt  DateTime
   createdAt  DateTime @default(now())

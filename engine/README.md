@@ -47,10 +47,43 @@ track the template matcher emitted 11 chords with many spurious minors (Am, Em,
 Dm, C#m…); BTC returns the actual F#m / A / E / B / D. Inference is ~2–5 s for a
 5-minute song on CPU.
 
-BTC here uses the **maj/min** model (25 labels), matching the app's chord
-vocabulary. The repo also ships a large-vocabulary model (170 labels: 7ths, sus,
-dim, aug, slash chords) — using it needs the frontend's transpose/capo/diagram
-code taught those qualities, so it's left as follow-up.
+BTC now runs its **large-vocabulary** checkpoint by default (170 labels: 12 roots ×
+14 qualities — maj, m, 7, m7, maj7, 6, m6, sus2, sus4, dim, aug, dim7, m7b5, mMaj7 —
+plus N). Set `CHORD_VOCAB=majmin` for the 25-label triad model. It has no
+slash-chord output. Two accuracy measures apply to either:
+
+- **Overlapping windows.** BTC's own recipe decodes hard 10 s windows; here they
+  overlap 50% and class probabilities are averaged (centre-weighted), so window edges
+  aren't decoded with half their context missing.
+- **Triad fallback.** An extended chord the model is less than `extended_floor`
+  (default 0.45) sure of is shown as its plain triad rather than assert a 7th/sus
+  that may not be there. This threshold is an untuned starting point.
+
+### Stem separation (dense mixes)
+
+`pip install demucs` enables **Demucs `htdemucs_6s`** (drums, bass, vocals, guitar,
+piano, other; ~55 MB weights on first use). When on:
+
+| Task | Reads from | Why |
+|------|-----------|-----|
+| Chords, key | harmonic mix (bass + guitar + piano + other) | drums/vocal smear chroma and skew the key |
+| Lyrics (`/transcribe`) | vocal stem, VAD on | no band masking the voice; silence between phrases stops hallucinated text |
+| Tab (`/tab`) | guitar stem (or guitar+other if the guitar stem is thin) | basic-pitch stops transcribing the vocal line |
+
+Enable per request with a `separate=1` form field / JSON `"separate": true` (the web
+app's **High-accuracy mode** checkbox), or server-wide with `STEM_SEPARATION`:
+`off` | `auto` (default — only when CUDA is available) | `on`. Stems are cached in
+`engine/.cache/stems/` by file hash (last 8 songs), so `/analyze`, `/transcribe` and
+`/tab` on one song separate once. CPU speed is ≈0.7× realtime; on a GPU it is
+seconds. If Demucs is missing or fails the engine silently uses the plain mix.
+
+Synthetic check (a 32 s dense mix — 7th chords, a wandering "vocal", loud noise
+"drums"; ground truth known): triads-only got every *root* right but 0% exact
+(cannot express a 7th); the large vocabulary got all 8 chords right; adding
+separation kept them right, raised most confidences (Dm7 0.66 → 0.90) and fixed
+the key (G major → C major). **This is synthetic audio** — it shows the plumbing
+and the direction, not a measured accuracy gain on real recordings. Score real songs
+with the `mir_eval` recipe below before quoting a number.
 
 The notes below are about the **`template` backend**, kept for the record.
 

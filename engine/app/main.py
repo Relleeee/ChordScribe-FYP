@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
+from . import separate as stems_mod
 from .ffmpeg_setup import ensure_ffmpeg, ensure_readable
 from .ingest import Ingested, fetch_youtube, make_workdir, save_upload, youtube_id
 from .pipeline import analyze
@@ -70,18 +71,42 @@ async def _ingest_from_request(
         raise HTTPException(502, f"Failed to fetch YouTube audio: {exc}") from exc
 
 
+def _flag(extra: dict, key: str) -> bool | None:
+    """Optional boolean request field ("1"/"true"/True). None = not given."""
+    v = extra.get(key)
+    if v in (None, "", "null"):
+        return None
+    return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _stems_or_none(audio_path: str, requested: bool | None):
+    """Separate stems if this request wants them; on any failure carry on with the
+    plain mix — separation is an accuracy upgrade, never a reason to 500."""
+    if not stems_mod.enabled(requested):
+        return None
+    try:
+        return stems_mod.separate(audio_path)
+    except Exception:  # noqa: BLE001
+        log.exception("stem separation failed; using the full mix")
+        return None
+
+
 @app.get("/health")
 def health() -> dict[str, object]:
-    return {"ok": True, "version": __version__}
+    return {
+        "ok": True,
+        "version": __version__,
+        "stems": {"mode": stems_mod.mode(), "gpu": stems_mod.has_gpu()},
+    }
 
 
 @app.post("/analyze", response_model=AnalysisResult)
 async def analyze_endpoint(request: Request) -> AnalysisResult:
     workdir = make_workdir()
     try:
-        ingested, kind, _ = await _ingest_from_request(request, workdir)
+        ingested, kind, extra = await _ingest_from_request(request, workdir)
         try:
-            return analyze(ingested, kind=kind)
+            return analyze(ingested, kind=kind, separate=_flag(extra, "separate"))
         except Exception as exc:  # noqa: BLE001
             log.exception("analysis failed")
             raise HTTPException(500, f"Analysis failed: {exc}") from exc
@@ -96,10 +121,18 @@ async def transcribe_endpoint(request: Request) -> TranscriptionResult:
 
     workdir = make_workdir()
     try:
-        ingested, _kind, _ = await _ingest_from_request(request, workdir)
+        ingested, _kind, extra = await _ingest_from_request(request, workdir)
         audio_path = ensure_readable(ingested.path)
+        stems = _stems_or_none(audio_path, _flag(extra, "separate"))
+        hint = str(extra.get("lyrics") or "").strip() or None
         try:
-            return TranscriptionResult(**transcribe(audio_path))
+            return TranscriptionResult(
+                **transcribe(
+                    stems.vocals if stems else audio_path,
+                    isolated_vocals=stems is not None,
+                    lyrics_hint=hint,
+                )
+            )
         except TranscriptionUnavailable as exc:
             raise HTTPException(501, str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
@@ -119,6 +152,9 @@ async def tab_endpoint(request: Request) -> TabResult:
     try:
         ingested, _kind, extra = await _ingest_from_request(request, workdir)
         audio_path = ensure_readable(ingested.path)
+        stems = _stems_or_none(audio_path, _flag(extra, "separate"))
+        if stems:  # transcribe notes from the guitar, not from the whole band
+            audio_path = stems_mod.guitar_source(stems)
         bpm = extra.get("bpm")
         raw_chords = extra.get("chords")
         if isinstance(raw_chords, str):

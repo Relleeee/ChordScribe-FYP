@@ -38,24 +38,37 @@ def _load_model():
     return WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
 
 
-def transcribe(audio_path: str) -> dict:
+def transcribe(
+    audio_path: str, *, isolated_vocals: bool = False, lyrics_hint: str | None = None
+) -> dict:
     """Return ``{"text": "line\\nline…", "words": [{"t": sec, "w": token}], "language": "en"}``.
 
     Lines are Whisper's own segment boundaries. ``words`` is a flat, time-ordered
     list across the whole track.
+
+    ``isolated_vocals``: ``audio_path`` is a Demucs vocal stem, not the full mix.
+    VAD is then switched on (it sees real silence between phrases, which stops
+    Whisper hallucinating text over instrumental sections) and word timings are
+    much tighter because the band no longer masks the voice.
+    ``lyrics_hint``: the user's own lyrics, fed to Whisper as a prompt so it
+    spells sung words the way the sheet does (names, slang, repeated lines).
     """
     model = _load_model()
 
     segments, info = model.transcribe(
         audio_path,
         word_timestamps=True,
-        # No VAD: the Silero voice-activity model treats a sung vocal over a full
-        # band as "non-speech" and would drop most of the song (it cut ~90% of a
-        # test track). Whisper windows long audio on its own anyway.
-        vad_filter=False,
+        # On the full mix VAD stays off: Silero treats a sung vocal over a full band
+        # as "non-speech" and drops most of the song (it cut ~90% of a test track).
+        # On an isolated vocal stem that problem is gone, so it's on.
+        vad_filter=isolated_vocals,
+        vad_parameters=(
+            {"threshold": 0.35, "min_silence_duration_ms": 700} if isolated_vocals else None
+        ),
         # Songs repeat lines; not feeding the previous text back avoids the
         # decoder locking into a repetition loop on a repeated chorus.
         condition_on_previous_text=False,
+        initial_prompt=(lyrics_hint or "")[:600] or None,
     )
 
     lines: list[str] = []

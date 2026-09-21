@@ -24,6 +24,12 @@ export async function POST(
 
   const contentType = req.headers.get("content-type") ?? "";
 
+  // If this song was analysed in high-accuracy mode, transcribe from the separated
+  // vocal stem too (the engine caches stems, so this costs no second separation).
+  const separate = analysis.engine.method.includes("Demucs");
+  // The user's own lyrics bias Whisper toward the right spellings.
+  const lyricsHint = analysis.lyrics?.slice(0, 600) ?? "";
+
   let engineRes: Response;
   try {
     if (contentType.includes("multipart/form-data")) {
@@ -31,6 +37,8 @@ export async function POST(
       if (!(file instanceof File) || file.size === 0) return bad(400, "Missing audio file");
       const fwd = new FormData();
       fwd.append("file", file, file.name);
+      if (separate) fwd.append("separate", "1");
+      if (lyricsHint) fwd.append("lyrics", lyricsHint);
       engineRes = await fetch(`${ENGINE_URL}/transcribe`, { method: "POST", body: fwd });
     } else if (analysis.source.kind === "youtube") {
       engineRes = await fetch(`${ENGINE_URL}/transcribe`, {
@@ -38,6 +46,8 @@ export async function POST(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           youtube_url: `https://www.youtube.com/watch?v=${analysis.source.reference}`,
+          ...(separate ? { separate: true } : {}),
+          ...(lyricsHint ? { lyrics: lyricsHint } : {}),
         }),
       });
     } else {

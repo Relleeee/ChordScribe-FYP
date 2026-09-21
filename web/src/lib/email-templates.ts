@@ -22,17 +22,14 @@ export function otpEmail(code: string): Omit<Mail, "to"> {
   };
 }
 
-export function resetEmail(link: string): Omit<Mail, "to"> {
+export function resetOtpEmail(code: string): Omit<Mail, "to"> {
   return {
-    subject: "Reset your ChordScribe password",
-    text: `Reset your ChordScribe password: ${link}\nThis link expires in 1 hour.`,
+    subject: `Your ChordScribe password reset code: ${code}`,
+    text: `Your ChordScribe password reset code is ${code}. It expires in 10 minutes.`,
     html: shell(
       "Reset your password",
-      `<p style="font-size:14px;color:#5f574e">Click the button to choose a new password. This link expires in 1 hour.</p>
-       <p style="margin:16px 0">
-         <a href="${link}" style="background:#b45309;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;font-size:14px">Reset password</a>
-       </p>
-       <p style="font-size:12px;color:#8a7f75;word-break:break-all">${link}</p>`,
+      `<p style="font-size:32px;letter-spacing:6px;font-weight:700;margin:8px 0">${code}</p>
+       <p style="font-size:14px;color:#5f574e">Enter this code, then choose a new password. It expires in 10 minutes.</p>`,
     ),
   };
 }

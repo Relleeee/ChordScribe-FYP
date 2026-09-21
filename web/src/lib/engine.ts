@@ -29,10 +29,20 @@ async function readError(res: Response): Promise<string | undefined> {
   }
 }
 
+/** Per-request engine options. */
+export interface AnalyzeOptions {
+  /** Separate vocals/drums first (Demucs) — slower, more accurate on dense mixes. */
+  highAccuracy?: boolean;
+}
+
 /** Ask the engine to analyse an uploaded audio/video file. */
-export async function analyzeUpload(file: File): Promise<AnalysisResult> {
+export async function analyzeUpload(
+  file: File,
+  opts: AnalyzeOptions = {},
+): Promise<AnalysisResult> {
   const form = new FormData();
   form.append("file", file, file.name);
+  if (opts.highAccuracy) form.append("separate", "1");
 
   const res = await fetch(`${ENGINE_URL}/analyze`, { method: "POST", body: form });
   if (!res.ok) {
@@ -42,11 +52,17 @@ export async function analyzeUpload(file: File): Promise<AnalysisResult> {
 }
 
 /** Ask the engine to fetch a YouTube video and analyse its audio. */
-export async function analyzeYouTube(youtubeUrl: string): Promise<AnalysisResult> {
+export async function analyzeYouTube(
+  youtubeUrl: string,
+  opts: AnalyzeOptions = {},
+): Promise<AnalysisResult> {
   const res = await fetch(`${ENGINE_URL}/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ youtube_url: youtubeUrl }),
+    body: JSON.stringify({
+      youtube_url: youtubeUrl,
+      ...(opts.highAccuracy ? { separate: true } : {}),
+    }),
   });
   if (!res.ok) {
     throw new EngineError("Engine failed to analyse YouTube URL", res.status, await readError(res));

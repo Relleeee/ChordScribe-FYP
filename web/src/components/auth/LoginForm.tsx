@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Provider } from "@/lib/oauth";
@@ -9,6 +9,7 @@ import { AuthShell, Divider, Field, FormError, SubmitButton } from "./AuthShell"
 import { SocialButtons } from "./SocialButtons";
 import { TermsGate } from "./TermsGate";
 import { DevPreviewLink } from "./DevPreviewLink";
+import { Turnstile } from "./Turnstile";
 
 const OAUTH_ERRORS: Record<string, string> = {
   oauth_failed: "Social sign-in didn't complete. Please try again.",
@@ -20,10 +21,12 @@ export function LoginForm({
   configured,
   next,
   error,
+  turnstileSiteKey,
 }: {
   configured: Provider[];
   next: string;
   error?: string;
+  turnstileSiteKey: string;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<"password" | "otp">("password");
@@ -33,6 +36,10 @@ export function LoginForm({
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [agreed, setAgreed] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  // Turnstile tokens are single-use; bumping this remounts the widget for a fresh one.
+  const [captchaKey, setCaptchaKey] = useState(0);
+  const handleToken = useCallback((t: string | null) => setCaptchaToken(t), []);
 
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(
@@ -72,10 +79,17 @@ export function LoginForm({
 
   async function requestCode(e: React.FormEvent) {
     e.preventDefault();
-    const body = await call("/api/auth/otp/request", { email });
+    const body = await call("/api/auth/otp/request", {
+      email,
+      agreedToTerms: agreed,
+      turnstileToken: captchaToken,
+    });
     if (body) {
       setDevPreview(typeof body.previewUrl === "string" ? body.previewUrl : null);
       setOtpStep("code");
+    } else {
+      setCaptchaToken(null);
+      setCaptchaKey((k) => k + 1);
     }
   }
 
@@ -124,7 +138,7 @@ export function LoginForm({
               }}
               className="text-accent hover:underline"
             >
-              Email me a code instead
+              Sign in with email only
             </button>
             <Link href="/forgot-password" className="text-foreground/60 hover:underline">
               Forgot password?
@@ -144,7 +158,7 @@ export function LoginForm({
             value={email}
             autoComplete="email"
             onChange={setEmail}
-            hint="We'll send a 6-digit sign-in code."
+            hint="No password needed — we'll email a 6-digit code. New here? Your account is created automatically."
           />
           <button
             type="button"
@@ -156,9 +170,10 @@ export function LoginForm({
           >
             Use a password instead
           </button>
+          <Turnstile key={captchaKey} siteKey={turnstileSiteKey} onToken={handleToken} />
           <TermsGate checked={agreed} onChange={setAgreed} />
           <FormError>{formError}</FormError>
-          <SubmitButton busy={busy} disabled={!agreed}>
+          <SubmitButton busy={busy} disabled={!agreed || !captchaToken}>
             Send code
           </SubmitButton>
         </form>

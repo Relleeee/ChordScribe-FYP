@@ -12,10 +12,21 @@ def _default_backend() -> str:
     return os.environ.get("CHORD_BACKEND", "btc").strip().lower()
 
 
+def _default_vocab() -> str:
+    # "large" = 170 labels incl. 7ths/sus/dim/aug (default); "majmin" = triads only.
+    return os.environ.get("CHORD_VOCAB", "large").strip().lower()
+
+
 @dataclass(frozen=True)
 class AnalysisParams:
     # Which chord recogniser to use — see chords_btc.py / chords.py.
     chord_backend: str = field(default_factory=_default_backend)
+    # BTC label vocabulary: "large" (7ths, sus, dim, aug…) or "majmin".
+    chord_vocab: str = field(default_factory=_default_vocab)
+    # An extended chord (7th/sus/…) the model is less sure of than this is shown
+    # as its plain triad instead. Untuned starting point — raise it for cleaner
+    # charts, lower it to see more colour. 0 disables.
+    extended_floor: float = 0.45
     sample_rate: int = 22050
     hop_length: int = 2048
     # Softmax temperature applied to template similarities before decoding.
@@ -42,6 +53,8 @@ class AnalysisParams:
     def as_dict(self) -> dict[str, float | str | bool]:
         return {
             "chord_backend": self.chord_backend,
+            "chord_vocab": self.chord_vocab,
+            "extended_floor": self.extended_floor,
             "sample_rate": self.sample_rate,
             "hop_length": self.hop_length,
             "emission_temperature": self.emission_temperature,

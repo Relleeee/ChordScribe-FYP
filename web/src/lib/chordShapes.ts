@@ -1,5 +1,7 @@
 /**
- * Guitar fingerings for the major/minor triads the app shows.
+ * Guitar fingerings for the chords the app shows: major/minor triads plus the
+ * qualities the large-vocabulary engine emits (7, m7, maj7, 6, m6, sus2, sus4,
+ * dim, aug, dim7, m7b5, mMaj7).
  *
  * Frets are low-E → high-e (index 0 = low E string): `null` = don't play,
  * `0` = open, otherwise an absolute fret. In standard tuning the hand-tuned open
@@ -31,7 +33,28 @@ function pitchClass(root: string): number | null {
 // Distance (semitones) from the open string to a given pitch class.
 const fromOpen = (openPc: number, targetPc: number) => (targetPc - openPc + 12) % 12;
 
-const OPEN: Record<string, (number | null)[]> = {
+type Frets = (number | null)[];
+
+/** Chord-tone intervals (semitones above the root) for each supported quality suffix. */
+const INTERVALS: Record<string, number[]> = {
+  "": [0, 4, 7],
+  m: [0, 3, 7],
+  "7": [0, 4, 7, 10],
+  m7: [0, 3, 7, 10],
+  maj7: [0, 4, 7, 11],
+  "6": [0, 4, 7, 9],
+  m6: [0, 3, 7, 9],
+  sus2: [0, 2, 7],
+  sus4: [0, 5, 7],
+  dim: [0, 3, 6],
+  aug: [0, 4, 8],
+  dim7: [0, 3, 6, 9],
+  m7b5: [0, 3, 6, 10],
+  mMaj7: [0, 3, 7, 11],
+};
+
+/** Hand-tuned open-position voicings, keyed by root + quality. */
+const OPEN: Record<string, Frets> = {
   C: [null, 3, 2, 0, 1, 0],
   A: [null, 0, 2, 2, 2, 0],
   G: [3, 2, 0, 0, 0, 3],
@@ -40,15 +63,67 @@ const OPEN: Record<string, (number | null)[]> = {
   Am: [null, 0, 2, 2, 1, 0],
   Em: [0, 2, 2, 0, 0, 0],
   Dm: [null, null, 0, 2, 3, 1],
+  A7: [null, 0, 2, 0, 2, 0],
+  B7: [null, 2, 1, 2, 0, 2],
+  C7: [null, 3, 2, 3, 1, 0],
+  D7: [null, null, 0, 2, 1, 2],
+  E7: [0, 2, 0, 1, 0, 0],
+  G7: [3, 2, 0, 0, 0, 1],
+  Am7: [null, 0, 2, 0, 1, 0],
+  Dm7: [null, null, 0, 2, 1, 1],
+  Em7: [0, 2, 0, 0, 0, 0],
+  Cmaj7: [null, 3, 2, 0, 0, 0],
+  Dmaj7: [null, null, 0, 2, 2, 2],
+  Fmaj7: [null, null, 3, 2, 1, 0],
+  Gmaj7: [3, 2, 0, 0, 0, 2],
+  Amaj7: [null, 0, 2, 1, 2, 0],
+  Emaj7: [0, 2, 1, 1, 0, 0],
+  Asus2: [null, 0, 2, 2, 0, 0],
+  Asus4: [null, 0, 2, 2, 3, 0],
+  Dsus2: [null, null, 0, 2, 3, 0],
+  Dsus4: [null, null, 0, 2, 3, 3],
+  Esus4: [0, 2, 2, 2, 0, 0],
 };
 
-// Movable barre templates, relative to the barre fret.
-const E_MAJOR = [0, 2, 2, 1, 0, 0];
-const E_MINOR = [0, 2, 2, 0, 0, 0];
-const A_MAJOR = [null, 0, 2, 2, 2, 0];
-const A_MINOR = [null, 0, 2, 2, 1, 0];
+/**
+ * Movable barre templates, relative to the barre fret: `e` is rooted on the low
+ * E string, `a` on the A string. A quality may only have one of the two.
+ */
+const BARRE: Record<string, { e?: Frets; a?: Frets }> = {
+  "": { e: [0, 2, 2, 1, 0, 0], a: [null, 0, 2, 2, 2, 0] },
+  m: { e: [0, 2, 2, 0, 0, 0], a: [null, 0, 2, 2, 1, 0] },
+  "7": { e: [0, 2, 0, 1, 0, 0], a: [null, 0, 2, 0, 2, 0] },
+  m7: { e: [0, 2, 0, 0, 0, 0], a: [null, 0, 2, 0, 1, 0] },
+  maj7: { e: [0, 2, 1, 1, 0, 0], a: [null, 0, 2, 1, 2, 0] },
+  "6": { e: [0, 2, 2, 1, 2, 0], a: [null, 0, 2, 2, 2, 2] },
+  m6: { e: [0, 2, 2, 0, 2, 0], a: [null, 0, 2, 2, 1, 2] },
+  sus4: { e: [0, 2, 2, 2, 0, 0], a: [null, 0, 2, 2, 3, 0] },
+  sus2: { e: [0, 2, 4, 4, 0, 0], a: [null, 0, 2, 2, 0, 0] },
+  dim: { e: [0, 1, 2, 0, null, null], a: [null, 0, 1, 2, 1, null] },
+  aug: { e: [0, 3, 2, 1, 1, 0], a: [null, 0, 3, 2, 2, 1] },
+  dim7: { a: [null, 0, 1, 2, 1, 2] },
+  m7b5: { e: [0, 1, 0, 0, 3, null], a: [null, 0, 1, 0, 1, null] },
+  mMaj7: { e: [0, 2, 1, 0, 0, 0], a: [null, 0, 2, 1, 1, 0] },
+};
 
-function barreShape(template: (number | null)[], fret: number): ChordShape {
+/** Split a label into root + quality suffix, or null if it isn't a supported chord. */
+function parseLabel(label: string): { root: string; quality: string } | null {
+  const m = /^([A-G][#b]?)(.*)$/.exec(label);
+  if (!m || !(m[2] in INTERVALS)) return null;
+  return { root: m[1], quality: m[2] };
+}
+
+/** True when the chord has a hand-tuned open-position voicing (no barre needed). */
+export function hasOpenShape(label: string): boolean {
+  return label in OPEN;
+}
+
+export interface NamedShape extends ChordShape {
+  /** Human label for the voicing, e.g. "Open", "E-shape barre". */
+  name: string;
+}
+
+function barreShape(template: Frets, fret: number): ChordShape {
   return {
     frets: template.map((n) => (n === null ? null : n + fret)),
     baseFret: fret,
@@ -56,25 +131,34 @@ function barreShape(template: (number | null)[], fret: number): ChordShape {
   };
 }
 
-function standardShape(root: string, minor: string): ChordShape | null {
-  const key = `${root}${minor}`;
+/** Movable barre voicings in standard tuning, lowest on the neck first. */
+function barreShapes(pc: number, quality: string): NamedShape[] {
+  const t = BARRE[quality];
+  if (!t) return [];
+  const out: NamedShape[] = [];
+  const eFret = fromOpen(NATURAL.E, pc); // root on the low-E string
+  const aFret = fromOpen(NATURAL.A, pc); // root on the A string
+  if (t.e && eFret >= 1) out.push({ ...barreShape(t.e, eFret), name: "E-shape barre" });
+  if (t.a && aFret >= 1) out.push({ ...barreShape(t.a, aFret), name: "A-shape barre" });
+  return out.sort((x, y) => x.baseFret - y.baseFret);
+}
+
+function standardShape(root: string, quality: string): ChordShape | null {
+  const key = `${root}${quality}`;
   if (OPEN[key]) return { frets: OPEN[key], baseFret: 1, barre: false };
 
   const pc = pitchClass(root);
   if (pc === null) return null;
+  const barres = barreShapes(pc, quality);
+  if (barres[0]) return barres[0];
 
-  const eFret = fromOpen(NATURAL.E, pc); // root on the low-E string
-  const aFret = fromOpen(NATURAL.A, pc); // root on the A string
-
-  // Prefer whichever barre sits lower on the neck (ties to the E-shape).
-  const useE = eFret >= 1 && (eFret <= aFret || aFret < 1);
-  return useE
-    ? barreShape(minor ? E_MINOR : E_MAJOR, eFret)
-    : barreShape(minor ? A_MINOR : A_MAJOR, Math.max(aFret, 1));
+  // The root sits on an open string but this quality has no open voicing (e.g. an
+  // Adim7): play the same barre an octave up rather than give up.
+  const t = BARRE[quality];
+  if (t?.a && fromOpen(NATURAL.A, pc) === 0) return barreShape(t.a, 12);
+  if (t?.e && fromOpen(NATURAL.E, pc) === 0) return barreShape(t.e, 12);
+  return null;
 }
-
-const MAJOR_INTERVALS = [0, 4, 7];
-const MINOR_INTERVALS = [0, 3, 7];
 
 /**
  * Adapt the standard-tuning shape to another tuning the way a guitarist does:
@@ -88,8 +172,8 @@ const MINOR_INTERVALS = [0, 3, 7];
  * Not a full chord dictionary, but it produces the voicings players actually use
  * for the common tunings.
  */
-function adaptShape(root: string, minor: string, tuning: Tuning): ChordShape | null {
-  const base = standardShape(root, minor);
+function adaptShape(root: string, quality: string, tuning: Tuning): ChordShape | null {
+  const base = standardShape(root, quality);
   const rootPc = pitchClass(root);
   if (!base || rootPc === null) return null;
 
@@ -98,9 +182,7 @@ function adaptShape(root: string, minor: string, tuning: Tuning): ChordShape | n
   );
   if (deltas.every((d) => d === deltas[0])) return base;
 
-  const tones = new Set(
-    (minor === "m" ? MINOR_INTERVALS : MAJOR_INTERVALS).map((i) => (rootPc + i) % 12),
-  );
+  const tones = new Set(INTERVALS[quality].map((i) => (rootPc + i) % 12));
   const ceiling = base.baseFret + 4;
 
   const frets = base.frets.map((f, i) => {
@@ -119,23 +201,18 @@ function adaptShape(root: string, minor: string, tuning: Tuning): ChordShape | n
   return { frets, baseFret: base.baseFret, barre: base.barre && !droppedBass };
 }
 
-export interface NamedShape extends ChordShape {
-  /** Human label for the voicing, e.g. "Open", "E-shape barre". */
-  name: string;
-}
-
 /**
  * Every voicing worth showing for a chord, easiest first: the open shape if one
  * exists, then the movable E-shape and A-shape barres. Non-standard tunings get
- * the single adapted shape.
+ * the single adapted shape. Unsupported chord labels yield none.
  */
 export function getChordShapes(label: string, tuning: Tuning = STANDARD): NamedShape[] {
-  const m = /^([A-G][#b]?)(m?)$/.exec(label);
-  if (!m) return [];
-  const [, root, minor] = m;
+  const parsed = parseLabel(label);
+  if (!parsed) return [];
+  const { root, quality } = parsed;
 
   if (!isStandard(tuning)) {
-    const s = adaptShape(root, minor, tuning);
+    const s = adaptShape(root, quality, tuning);
     return s ? [{ ...s, name: tuning.name.replace(/\s*\(.*\)\s*/, "") }] : [];
   }
 
@@ -143,16 +220,12 @@ export function getChordShapes(label: string, tuning: Tuning = STANDARD): NamedS
   if (pc === null) return [];
 
   const out: NamedShape[] = [];
-  const key = `${root}${minor}`;
+  const key = `${root}${quality}`;
   if (OPEN[key]) out.push({ frets: OPEN[key], baseFret: 1, barre: false, name: "Open" });
-
-  const eFret = fromOpen(NATURAL.E, pc); // root on the low-E string
-  if (eFret >= 1) {
-    out.push({ ...barreShape(minor ? E_MINOR : E_MAJOR, eFret), name: "E-shape barre" });
-  }
-  const aFret = fromOpen(NATURAL.A, pc); // root on the A string
-  if (aFret >= 1) {
-    out.push({ ...barreShape(minor ? A_MINOR : A_MAJOR, aFret), name: "A-shape barre" });
+  out.push(...barreShapes(pc, quality));
+  if (out.length === 0) {
+    const fallback = standardShape(root, quality);
+    if (fallback) out.push({ ...fallback, name: "Barre" });
   }
 
   return out.sort((a, b) => a.baseFret - b.baseFret).slice(0, 3);

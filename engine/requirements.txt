@@ -29,3 +29,8 @@ faster-whisper>=1.0
 # TensorFlow it doesn't need for ONNX inference, so install it without deps:
 #   pip install --no-deps basic-pitch
 #   pip install pretty_midi "resampy>=0.2.2,<0.4.3"
+
+# --- Optional stem separation (drums/vocals/guitar isolation for dense mixes) ---
+# Improves chords, key, lyric timing and tab on full-band recordings. ~55 MB of
+# weights download on first use. See engine/README.md -> "Stem separation".
+demucs>=4.1

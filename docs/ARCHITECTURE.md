@@ -21,7 +21,7 @@ ChordScribe turns a recording into a chord chart a guitarist can actually read:
 - **Output** — estimated key and tempo, a timestamped list of chord segments, a
   proportional timeline, a printable chord sheet, chord-fingering diagrams, and a
   generated fingerpicking tab. Lyrics can be pasted in and kept with the song.
-- **Accounts** — email/password (or Google/Facebook/email-OTP), each user's
+- **Accounts** — email/password, Google/Facebook, or passwordless email code, each user's
   conversions saved to their own history.
 
 It is two independently runnable services:
@@ -104,7 +104,7 @@ chord-scribe/
     └── src/
         ├── app/
         │   ├── page.tsx        dashboard (server component, auth-gated)
-        │   ├── login|register|forgot-password|reset-password/
+        │   ├── login|register|forgot-password/
         │   └── api/
         │       ├── analyze/route.ts        POST: proxy to engine + save
         │       ├── analyses/route.ts       GET list
@@ -162,11 +162,21 @@ chord-scribe/
   `httpOnly`, `sameSite=lax` cookie; `secure` in production. Lifetime
   `SESSION_DAYS`.
 - `getCurrentUser()` is wrapped in React `cache()` so it runs once per request.
-- Also supported: Google/Facebook OAuth (`arctic`), email-OTP login, and
-  password reset — all via one-time codes in the `VerificationCode` table
-  (only the SHA-256 hash of each code/token is stored).
-- Bot protection: Cloudflare **Turnstile** on register (blank keys → Cloudflare
-  test keys that always pass, for local dev).
+- Also supported: Google/Facebook OAuth (`arctic`; buttons stay disabled until
+  `GOOGLE_*` / `FACEBOOK_*` credentials are set), **email-only sign-in**, and
+  **OTP password reset**.
+  - *Email-only sign-in* (`/api/auth/otp/*`): enter an email, receive a 6-digit
+    code, done — no password. A new email creates the account on first verify, so
+    the request step reveals nothing about whether an account exists.
+  - *Forgot password* (`/api/auth/password/{forgot,reset}`): email → 6-digit code
+    → code + new password in one step. `forgot` answers identically whether or not
+    the account exists.
+  - Codes live in the `VerificationCode` table (only the SHA-256 hash is stored),
+    expire in 10 minutes, are single-use, lock after 5 wrong tries, and are bound to
+    their *purpose* — a sign-in code can't reset a password.
+- Bot protection: Cloudflare **Turnstile** on register and on the email-only
+  request (blank keys → Cloudflare test keys that always pass, for local dev), plus
+  per-email and per-IP rate limits on every code-sending endpoint.
 - Dev email: blank SMTP → **Ethereal** preview; the preview URL is printed to the
   console and surfaced in the UI (`DevPreviewLink`).
 
@@ -179,7 +189,7 @@ SQLite file at `web/prisma/dev.db` (via `DATABASE_URL` in `web/.env`). Models:
 - **OAuthAccount** — `(provider, providerAccountId)` unique, cascades on user
   delete.
 - **VerificationCode** — `identifier` (email), `tokenHash`, `purpose`
-  (`email-otp` | `password-reset`), `attempts`, `expiresAt`.
+  (`email-otp` | `password-reset-otp`), `attempts`, `expiresAt`.
 - **Analysis** — `title`, `sourceKind`, `sourceRef`, `durationSec`, `bpm?`,
   `musicalKey?`, `lyrics?`, and `result` (the full `AnalysisResult` serialised as
   JSON). Indexed by `(userId, createdAt)`.
@@ -322,13 +332,25 @@ fretboard assignment and a sixteenth-note-grid ASCII renderer. Opt-in,
    `AnalysisParams.chord_backend`:
    - **`btc`** (default) — **BTC**, a pretrained bi-directional transformer for
      chord recognition (Park et al., ISMIR 2019), vendored in `vendor/btc/`.
-     Uses the **maj/min** model (25 labels) matching the app's vocabulary.
-     ~12 MB weights auto-download on first use. Inference ≈ 2–5 s for a
+     Uses the **large-vocabulary** model by default (170 labels: 12 roots × 14
+     qualities — maj, m, 7, m7, maj7, 6, m6, sus2, sus4, dim, aug, dim7, m7b5,
+     mMaj7 — plus N), or the 25-label maj/min model with `CHORD_VOCAB=majmin`.
+     Inference runs over **50%-overlapping windows** with probabilities averaged, so
+     no chord is decoded at a window edge with half its context missing. An
+     extended chord the model is <`extended_floor` (0.45) sure of is shown as its
+     triad. BTC has no slash-chord/inversion output. Inference ≈ 2–5 s for a
      5-minute song on CPU. **If BTC throws, the pipeline logs and falls back to
      the template backend** rather than failing the request.
    - **`template`** — chroma → 24 binary maj/min triad templates → cosine
      similarity → softmax emission → **Viterbi** smoothing → segment merge.
      Kept for comparison / offline use (no Torch).
+   **Optional stem separation** (`separate.py`, Demucs `htdemucs_6s`) runs *before*
+   this step when requested (`separate=1`) or on a GPU host (`STEM_SEPARATION=auto`).
+   Chords and key are then read from the *harmonic* mix (bass + guitar + piano +
+   other — no drums, no vocal); lyrics are transcribed from the vocal stem; tab is
+   transcribed from the guitar stem. Stems are cached by file hash so the three
+   endpoints share one separation. If Demucs is missing or fails, everything falls
+   back to the plain mix.
 5. **Key & tempo** (`keys.py`) — Krumhansl–Schmuckler probe-tone profiles
    correlated against the mean chroma; BPM from step 3. Run for both backends.
 
@@ -431,7 +453,8 @@ email-verification gate.
 
 | Area | Limitation |
 |------|------------|
-| Chord vocabulary | maj/min triads + `N` only — no 7ths, sus, dim, aug, slash chords. The BTC large-vocab (170-label) model is vendored but unused pending frontend support. |
+| Chord vocabulary | 14 qualities per root (7ths, sus, dim, aug, 6ths, m7b5…). **No slash chords / inversions** — BTC has no bass output; that needs a different model (see `docs/MODEL-SELECTION.md`). Extended-chord voicings for the diagrams/tab are a curated table (`chordShapes.ts`, mirrored in `tab.py`), not a full chord dictionary. |
+| Separation cost | Demucs is ~0.7× realtime on CPU (a 4-minute song ≈ 3 min), seconds on a GPU. Hence opt-in ("High-accuracy mode") unless a GPU is present. |
 | Major/minor on thin voicings | Power-chord-style arrangements (root+fifth, weak third) give little evidence to tell e.g. Am from A. Inherent to chroma methods. |
 | Lyrics transcription | Whisper `base` on sung, non-English, full-band audio is rough — a starting draft to correct, not a finished transcript. `WHISPER_MODEL=small` helps noticeably. |
 | Non-standard tuning shapes | Adapted from the standard shape, not a real per-tuning chord dictionary — fine for the common tunings, occasionally an awkward voicing for the exotic ones. |
@@ -499,11 +522,9 @@ standard).
 
 ### Larger chord vocabulary
 
-Switch the BTC backend to the vendored **170-label** model (7ths, sus, dim, aug,
-slash). Requires teaching `music.ts` (`parseChord` already keeps suffixes, but
-`transposeChord` spelling and key logic need checking) and `chordShapes.ts`
-(shapes for the new qualities) those chords. `engine/README.md` flags this as the
-main follow-up.
+**Done** — the engine uses the vendored 170-label BTC model by default, and
+`chordShapes.ts` / `music.ts` / `tab.py` understand its 14 qualities. Still open:
+slash chords (needs a bass-aware model such as CREMA or ChordFormer).
 
 ### Barred chord sheet
 

@@ -1,13 +1,8 @@
-import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { createHash, randomInt, timingSafeEqual } from "node:crypto";
 
 /** A 6-digit numeric one-time code, zero-padded. */
 export function sixDigitCode(): string {
   return String(randomInt(0, 1_000_000)).padStart(6, "0");
-}
-
-/** A URL-safe high-entropy token for password-reset links. */
-export function urlToken(bytes = 32): string {
-  return randomBytes(bytes).toString("base64url");
 }
 
 export function sha256(value: string): string {

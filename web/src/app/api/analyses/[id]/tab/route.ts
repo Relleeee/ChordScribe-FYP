@@ -25,6 +25,8 @@ export async function POST(
   const url = new URL(req.url);
   const tuning = url.searchParams.get("tuning") ?? "standard";
   const contentType = req.headers.get("content-type") ?? "";
+  // High-accuracy songs get their tab transcribed from the isolated guitar stem.
+  const separate = analysis.engine.method.includes("Demucs");
 
   // The chord segments guide the tab: strums are written as the chord's grip,
   // and stray non-chord notes (vocal / other-instrument bleed) are pruned.
@@ -42,6 +44,7 @@ export async function POST(
       fwd.append("file", file, file.name);
       fwd.append("tuning", tuning);
       fwd.append("chords", chords);
+      if (separate) fwd.append("separate", "1");
       if (analysis.bpm != null) fwd.append("bpm", String(analysis.bpm));
       engineRes = await fetch(`${ENGINE_URL}/tab`, { method: "POST", body: fwd });
     } else if (analysis.source.kind === "youtube") {
@@ -53,6 +56,7 @@ export async function POST(
           tuning,
           bpm: analysis.bpm ?? null,
           chords: JSON.parse(chords),
+          ...(separate ? { separate: true } : {}),
         }),
       });
     } else {

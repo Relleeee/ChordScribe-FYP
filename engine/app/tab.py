@@ -97,8 +97,51 @@ _OPEN_STD: dict[str, tuple[int | None, ...]] = {
     "Em": (0, 2, 2, 0, 0, 0),
     "Dm": (None, None, 0, 2, 3, 1),
 }
-_E_MAJ, _E_MIN = (0, 2, 2, 1, 0, 0), (0, 2, 2, 0, 0, 0)
-_A_MAJ, _A_MIN = (None, 0, 2, 2, 2, 0), (None, 0, 2, 2, 1, 0)
+
+# Extended qualities (what the large-vocabulary chord model emits). Kept in sync
+# with web/src/lib/chordShapes.ts — same voicings the chord diagrams show.
+_INTERVALS: dict[str, tuple[int, ...]] = {
+    "": (0, 4, 7), "m": (0, 3, 7), "7": (0, 4, 7, 10), "m7": (0, 3, 7, 10),
+    "maj7": (0, 4, 7, 11), "6": (0, 4, 7, 9), "m6": (0, 3, 7, 9),
+    "sus2": (0, 2, 7), "sus4": (0, 5, 7), "dim": (0, 3, 6), "aug": (0, 4, 8),
+    "dim7": (0, 3, 6, 9), "m7b5": (0, 3, 6, 10), "mMaj7": (0, 3, 7, 11),
+}
+_OPEN_STD.update({
+    "A7": (None, 0, 2, 0, 2, 0), "B7": (None, 2, 1, 2, 0, 2), "C7": (None, 3, 2, 3, 1, 0),
+    "D7": (None, None, 0, 2, 1, 2), "E7": (0, 2, 0, 1, 0, 0), "G7": (3, 2, 0, 0, 0, 1),
+    "Am7": (None, 0, 2, 0, 1, 0), "Dm7": (None, None, 0, 2, 1, 1), "Em7": (0, 2, 0, 0, 0, 0),
+    "Cmaj7": (None, 3, 2, 0, 0, 0), "Dmaj7": (None, None, 0, 2, 2, 2),
+    "Fmaj7": (None, None, 3, 2, 1, 0), "Gmaj7": (3, 2, 0, 0, 0, 2),
+    "Amaj7": (None, 0, 2, 1, 2, 0), "Emaj7": (0, 2, 1, 1, 0, 0),
+    "Asus2": (None, 0, 2, 2, 0, 0), "Asus4": (None, 0, 2, 2, 3, 0),
+    "Dsus2": (None, None, 0, 2, 3, 0), "Dsus4": (None, None, 0, 2, 3, 3),
+    "Esus4": (0, 2, 2, 2, 0, 0),
+})
+# Movable barres relative to the barre fret: (E-string-rooted, A-string-rooted).
+_BARRE: dict[str, tuple[tuple[int | None, ...] | None, tuple[int | None, ...] | None]] = {
+    "": ((0, 2, 2, 1, 0, 0), (None, 0, 2, 2, 2, 0)),
+    "m": ((0, 2, 2, 0, 0, 0), (None, 0, 2, 2, 1, 0)),
+    "7": ((0, 2, 0, 1, 0, 0), (None, 0, 2, 0, 2, 0)),
+    "m7": ((0, 2, 0, 0, 0, 0), (None, 0, 2, 0, 1, 0)),
+    "maj7": ((0, 2, 1, 1, 0, 0), (None, 0, 2, 1, 2, 0)),
+    "6": ((0, 2, 2, 1, 2, 0), (None, 0, 2, 2, 2, 2)),
+    "m6": ((0, 2, 2, 0, 2, 0), (None, 0, 2, 2, 1, 2)),
+    "sus4": ((0, 2, 2, 2, 0, 0), (None, 0, 2, 2, 3, 0)),
+    "sus2": ((0, 2, 4, 4, 0, 0), (None, 0, 2, 2, 0, 0)),
+    "dim": ((0, 1, 2, 0, None, None), (None, 0, 1, 2, 1, None)),
+    "aug": ((0, 3, 2, 1, 1, 0), (None, 0, 3, 2, 2, 1)),
+    "dim7": (None, (None, 0, 1, 2, 1, 2)),
+    "m7b5": ((0, 1, 0, 0, 3, None), (None, 0, 1, 0, 1, None)),
+    "mMaj7": ((0, 2, 1, 0, 0, 0), (None, 0, 2, 1, 1, 0)),
+}
+
+
+def _split_label(label: str | None) -> tuple[str, str] | None:
+    """``"F#m7"`` → ``("F#", "m7")``; None if it isn't a supported chord."""
+    m = re.match(r"^([A-G][#b]?)(.*)$", label or "")
+    if not m or m.group(2) not in _INTERVALS:
+        return None
+    return m.group(1), m.group(2)
 
 
 def _root_pc(root: str) -> int | None:
@@ -109,31 +152,40 @@ def _root_pc(root: str) -> int | None:
 
 
 def chord_pitch_classes(label: str | None) -> frozenset[int]:
-    m = re.match(r"^([A-G][#b]?)(m?)$", label or "")
-    if not m:
+    parts = _split_label(label)
+    if parts is None:
         return frozenset()
-    pc = _root_pc(m.group(1))
+    pc = _root_pc(parts[0])
     if pc is None:
         return frozenset()
-    third = 3 if m.group(2) == "m" else 4
-    return frozenset({pc, (pc + third) % 12, (pc + 7) % 12})
+    return frozenset((pc + i) % 12 for i in _INTERVALS[parts[1]])
 
 
 def _standard_shape(label: str) -> tuple[int | None, ...] | None:
-    m = re.match(r"^([A-G][#b]?)(m?)$", label)
-    if not m:
+    parts = _split_label(label)
+    if parts is None:
         return None
-    root, minor = m.group(1), m.group(2)
+    root, quality = parts
     if label in _OPEN_STD:
         return _OPEN_STD[label]
     pc = _root_pc(root)
     if pc is None:
         return None
+    e_tmpl, a_tmpl = _BARRE[quality]
     e_fret, a_fret = (pc - 4) % 12, (pc - 9) % 12
-    if e_fret >= 1 and (e_fret <= a_fret or a_fret < 1):
-        tmpl, base = (_E_MIN if minor else _E_MAJ), e_fret
-    else:
-        tmpl, base = (_A_MIN if minor else _A_MAJ), max(a_fret, 1)
+    options = []  # (fret, template) — lowest on the neck wins
+    if e_tmpl and e_fret >= 1:
+        options.append((e_fret, e_tmpl))
+    if a_tmpl and a_fret >= 1:
+        options.append((a_fret, a_tmpl))
+    if not options:  # root on an open string, no open voicing: barre an octave up
+        if a_tmpl and a_fret == 0:
+            options.append((12, a_tmpl))
+        elif e_tmpl and e_fret == 0:
+            options.append((12, e_tmpl))
+    if not options:
+        return None
+    base, tmpl = min(options, key=lambda o: o[0])
     return tuple(None if x is None else x + base for x in tmpl)
 
 

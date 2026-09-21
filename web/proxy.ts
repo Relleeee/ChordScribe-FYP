@@ -5,7 +5,7 @@ import { SESSION_COOKIE } from "@/lib/session";
 // Reachable without a session. GUEST_ONLY additionally bounce a signed-in user
 // back to the app; the others are fine to visit either way.
 const GUEST_ONLY = ["/login", "/register"];
-const ALSO_PUBLIC = ["/forgot-password", "/reset-password"];
+const ALSO_PUBLIC = ["/forgot-password"];
 
 const matches = (pathname: string, list: string[]) =>
   list.some((p) => pathname === p || pathname.startsWith(`${p}/`));

@@ -1,12 +1,11 @@
 import { prisma } from "@/lib/db";
 import { createSession } from "@/lib/auth";
-import { verifyOtp } from "@/lib/verification";
+import { OTP_MESSAGES, verifyOtp } from "@/lib/verification";
 
-const MESSAGES = {
-  invalid: "That code isn't right",
-  expired: "That code has expired — request a new one",
-  locked: "Too many wrong tries — request a new code",
-} as const;
+/** "jane.doe+tag@example.com" → "jane.doe" — a placeholder until they rename themselves. */
+function nameFromEmail(email: string): string {
+  return email.split("@")[0]!.split("+")[0]! || "Guitarist";
+}
 
 export async function POST(request: Request): Promise<Response> {
   const body = (await request.json().catch(() => null)) as
@@ -20,16 +19,23 @@ export async function POST(request: Request): Promise<Response> {
 
   const result = await verifyOtp(email, code);
   if (!result.ok) {
-    return Response.json({ error: MESSAGES[result.reason] }, { status: 400 });
+    return Response.json({ error: OTP_MESSAGES[result.reason] }, { status: 400 });
   }
 
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-  if (!user) return Response.json({ error: "Account not found" }, { status: 404 });
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { emailVerified: new Date() },
+  // Proving control of the inbox is enough: sign in, or create the account on
+  // first use. Terms were accepted at the request step (which refuses without it).
+  const user = await prisma.user.upsert({
+    where: { email },
+    update: { emailVerified: new Date() },
+    create: {
+      email,
+      name: nameFromEmail(email),
+      emailVerified: new Date(),
+      termsAgreedAt: new Date(),
+    },
+    select: { id: true },
   });
+
   await createSession(user.id);
   return Response.json({ ok: true });
 }
