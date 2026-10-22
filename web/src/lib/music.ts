@@ -97,3 +97,47 @@ export function suggestCapo(chords: string[], key: string | null): CapoSuggestio
   // Don't nudge someone up the neck for no gain in open chords.
   return best.fret > 0 && best.openCount <= open.openCount ? open : best;
 }
+
+export interface TuneDownSuggestion {
+  /** Semitones to tune every string down (1 = E♭ standard, 2 = D standard). */
+  semitones: 1 | 2;
+  /** Preset id in `lib/tuning.ts`. */
+  tuningId: "eb-standard" | "d-standard";
+  shapes: string[];
+  shapeKey: string | null;
+  openCount: number;
+  total: number;
+  coversAll: boolean;
+}
+
+/**
+ * Songs recorded with the guitar tuned down (very common in rock and blues) come
+ * out in E♭ or D with awkward barre chords — no capo fixes that, because a capo
+ * only raises pitch. If tuning the whole guitar down ½ or 1 step turns clearly
+ * more of the chords into open shapes than the best capo option does, suggest it.
+ */
+export function suggestTuneDown(chords: string[], key: string | null): TuneDownSuggestion | null {
+  const distinct = [...new Set(chords.filter((c) => c && c !== "N"))];
+  if (distinct.length === 0) return null;
+  const capo = suggestCapo(chords, key);
+  const capoOpen = capo ? capo.openCount - capo.fret / 3 : 0;
+
+  let best: TuneDownSuggestion | null = null;
+  for (const semitones of [1, 2] as const) {
+    const s = suggestionAt(distinct, key, -semitones);
+    // Each step of retuning costs a little more than a capo fret (you have to
+    // retune back afterwards), so it must clearly win.
+    if (s.openCount - semitones / 2 <= capoOpen) continue;
+    if (best && s.openCount <= best.openCount) continue;
+    best = {
+      semitones,
+      tuningId: semitones === 1 ? "eb-standard" : "d-standard",
+      shapes: s.shapes,
+      shapeKey: s.shapeKey,
+      openCount: s.openCount,
+      total: s.total,
+      coversAll: s.coversAll,
+    };
+  }
+  return best;
+}

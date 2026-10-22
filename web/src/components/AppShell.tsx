@@ -121,21 +121,23 @@ export function AppShell({ user, initialAnalyses }: Props) {
   const ease = "cubic-bezier(0.32,0.72,0,1)";
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden">
-      <Topbar
-        sidebarOpen={sidebarOpen}
-        onToggleSidebar={toggleSidebar}
-        onLogout={handleLogout}
-        loggingOut={loggingOut}
-      />
+    <div className="flex h-dvh flex-col overflow-hidden print:block print:h-auto print:overflow-visible">
+      <div className="print:hidden">
+        <Topbar
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={toggleSidebar}
+          onLogout={handleLogout}
+          loggingOut={loggingOut}
+        />
+      </div>
 
-      <div className="relative flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1 print:block">
         {/* Sidebar: an in-flow collapsing column on desktop, a slide-over on
             mobile. `overflow-hidden` + a fixed-width inner panel means the
             content is clipped, not reflowed, while it animates. */}
         <aside
           style={{ transitionTimingFunction: ease }}
-          className={`z-40 shrink-0 overflow-hidden bg-surface-2 transition-[width,transform] duration-300 max-lg:fixed max-lg:bottom-0 max-lg:left-0 max-lg:top-14 max-lg:w-[18rem] max-lg:shadow-2xl ${
+          className={`z-40 shrink-0 print:hidden overflow-hidden bg-surface-2 transition-[width,transform] duration-300 max-lg:fixed max-lg:bottom-0 max-lg:left-0 max-lg:top-14 max-lg:w-[18rem] max-lg:shadow-2xl ${
             sidebarOpen
               ? "border-r border-border lg:w-[18rem] max-lg:translate-x-0"
               : "lg:w-0 max-lg:-translate-x-full"
@@ -160,12 +162,12 @@ export function AppShell({ user, initialAnalyses }: Props) {
           aria-label="Close menu"
           tabIndex={sidebarOpen ? 0 : -1}
           onClick={() => setSidebarOpen(false)}
-          className={`fixed inset-0 top-14 z-30 bg-black/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
+          className={`fixed inset-0 top-14 z-30 print:hidden bg-black/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden ${
             sidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
         />
 
-        <main className="themed-scrollbar min-w-0 flex-1 overflow-y-auto">
+        <main className="themed-scrollbar min-w-0 flex-1 overflow-y-auto print:overflow-visible">
           <div
             className={`mx-auto w-full space-y-6 px-4 py-6 transition-[max-width] duration-300 sm:px-6 lg:px-10 lg:py-10 ${
               active && !loading ? "max-w-6xl" : "max-w-2xl"
@@ -193,7 +195,7 @@ export function AppShell({ user, initialAnalyses }: Props) {
                 <button
                   type="button"
                   onClick={handleNew}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent-soft hover:text-accent"
+                  className="inline-flex items-center gap-1.5 rounded-lg border print:hidden border-border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent-soft hover:text-accent"
                 >
                   <span className="text-base leading-none">+</span> New analysis
                 </button>

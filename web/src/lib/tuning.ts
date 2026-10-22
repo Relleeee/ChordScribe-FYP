@@ -76,6 +76,18 @@ export function resolveTuning(value: string | null | undefined): Tuning {
 
 export const isStandard = (t: Tuning) => t.id === "standard";
 
+/**
+ * Semitones every string is tuned *down* from standard, when the whole guitar
+ * moved together (E♭ standard = 1, D standard = 2); 0 for standard or for
+ * tunings that move only some strings. Like a capo in reverse: the player keeps
+ * standard shapes and the pitch drops, so charts name the shapes, not the sound.
+ */
+export function uniformDrop(t: Tuning): number {
+  const deltas = t.pitches.map((p, i) => (((p - STANDARD.pitches[i]) % 12) + 12) % 12);
+  if (deltas[0] === 0 || deltas.some((d) => d !== deltas[0])) return 0;
+  return deltas[0] > 6 ? 12 - deltas[0] : -deltas[0];
+}
+
 // MIDI note numbers of the standard open strings: E2 A2 D3 G3 B3 E4.
 const STANDARD_MIDI = [40, 45, 50, 55, 59, 64];
 

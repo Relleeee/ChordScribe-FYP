@@ -458,8 +458,8 @@ email-verification gate.
 | Major/minor on thin voicings | Power-chord-style arrangements (root+fifth, weak third) give little evidence to tell e.g. Am from A. Inherent to chroma methods. |
 | Lyrics transcription | Whisper `base` on sung, non-English, full-band audio is rough — a starting draft to correct, not a finished transcript. `WHISPER_MODEL=small` helps noticeably. |
 | Non-standard tuning shapes | Adapted from the standard shape, not a real per-tuning chord dictionary — fine for the common tunings, occasionally an awkward voicing for the exotic ones. |
-| Beat/downbeat | BPM only; no bar lines or time-signature detection, so the chord sheet isn't barred. |
-| Tests | No web-side automated tests; engine tests don't cover the BTC path or real audio. |
+| Beat/downbeat | Meter (3/4 vs 4/4) and the first downbeat are a harmonic-rhythm heuristic (`meter.py`), not a learned downbeat model — reliable on songs with a regular harmonic rhythm, can sit a beat or two off otherwise (the UI shows the confidence). Analyses made before it existed fall back to a 4/4 grid from the BPM. |
+| Tests | Web: Vitest unit tests for the pure libraries only (no component or end-to-end tests yet). Engine: unit tests + synthetic-audio feature tests; real-audio accuracy is measured with `engine/eval/`, not in CI. |
 | Deploy | Local-dev only (SQLite, localhost CORS, dev secrets). No production config. |
 
 ---
@@ -526,11 +526,46 @@ standard).
 `chordShapes.ts` / `music.ts` / `tab.py` understand its 14 qualities. Still open:
 slash chords (needs a bass-aware model such as CREMA or ChordFormer).
 
-### Barred chord sheet
+### ✅ Done — Barred chord sheet ("Bars" view)
 
-Use the beat track (already computed) plus a downbeat/time-signature estimate to
-group chords into bars and render the chord sheet with bar lines — much closer to
-a real lead sheet.
+The engine keeps the beat grid and estimates the meter (`engine/app/meter.py`):
+for 3/4 and 4/4 and every phase it scores how many chord changes land on a bar
+line plus the onset accent of those beats, with a small 4/4 prior. The result is
+`AnalysisResult.meter` (`beats`, `beatsPerBar`, `firstDownbeat`, `confidence`).
+`web/src/lib/bars.ts` lays the chords out one slot per beat; `BarChart.tsx`
+renders it with bar lines, playhead and click-to-seek. Plain-text export uses it
+when there are no lyrics.
+
+### ✅ Done — Accuracy evaluation harness
+
+`engine/eval/` (see its README): runs the real pipeline over `<song>.<audio>` +
+`<song>.lab` pairs for each backend/stem configuration and writes a WCSR table,
+an SVG chart and per-song CSV. `make_synthetic.py` generates a smoke-test set.
+
+### ✅ Done — Live analysis progress
+
+`POST /analyze` with `Accept: application/x-ndjson` streams pipeline stages
+(`fetch → decode → features → [separate] → chords → key`) then the result; the
+Next route relays them and `AnalyzeForm` shows a step list with elapsed time.
+Blocking work in every engine endpoint now runs in a thread pool, so one long
+analysis no longer stalls `/health` or other requests.
+
+### ✅ Done — Export & print
+
+Toolbar **Export** menu: Print / Save as PDF (print stylesheet hides the app
+chrome and forces the light palette), ChordPro `.cho`, and plain text — all
+reflecting the current transpose/capo/tuning. Lyric layout logic moved to
+`lib/lyricsLayout.ts` so exports match the Lyrics view exactly.
+
+### ✅ Done — Tuning help
+
+- E♭/D standard now behave like a capo in reverse: chord names show the shapes
+  you finger (the UG convention), so the diagrams sound right on a tuned-down
+  guitar. (Before, the diagram for "E♭" in E♭ tuning actually sounded D.)
+- A **tune-down suggestion** appears next to the capo suggestion when tuning
+  down ½ or 1 step clearly beats any capo position (`music.ts::suggestTuneDown`).
+- The engine reports the recording's reference-pitch offset from A440
+  (`tuningCents`); past ±15 cents the UI says how far to retune to play along.
 
 ### Better major/minor on thin voicings
 
@@ -540,8 +575,9 @@ only.
 
 ### Web test coverage
 
-Add Vitest + Testing Library for `music.ts` / `chordShapes.ts` / `format.ts`
-(pure, high-value) and a Playwright smoke test for the analyse→result flow with
+**Partly done** — `npm test` runs Vitest over `music`, `chordShapes`, `tuning`,
+`format`, `pitch`, `ndjson`, `lyricsLayout`, `chordSheet` and `bars`. Still open:
+component tests and a Playwright smoke test of analyse→result with
 `ENGINE_MOCK=1`.
 
 ### Production deployment

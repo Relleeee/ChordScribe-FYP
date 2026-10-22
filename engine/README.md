@@ -158,6 +158,10 @@ ruff check .
 
 ## Evaluation (objective 3 in the proposal)
 
+**Use the harness in [`eval/`](eval/README.md)** — `python -m eval.run --data <folder>` scores every
+backend against reference `.lab` files and writes a WCSR table, chart and CSV.
+The manual recipe it automates:
+
 `chords.py` emits MIREX-style `maj/min` labels, so you can score against reference
 `.lab` files with [`mir_eval`](https://craffel.github.io/mir_eval/):
 

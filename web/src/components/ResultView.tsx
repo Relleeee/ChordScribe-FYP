@@ -9,8 +9,14 @@ import type {
   TranscriptWord,
 } from "@/lib/types";
 import { chordVocabulary, formatTime } from "@/lib/format";
-import { suggestCapo, transposeChord, transposeKey, type CapoSuggestion } from "@/lib/music";
-import { isStandard, resolveTuning, TUNINGS } from "@/lib/tuning";
+import {
+  suggestCapo,
+  suggestTuneDown,
+  transposeChord,
+  transposeKey,
+  type CapoSuggestion,
+} from "@/lib/music";
+import { isStandard, resolveTuning, TUNINGS, uniformDrop } from "@/lib/tuning";
 import { ChordTimeline } from "./ChordTimeline";
 import { ChordChart } from "./ChordChart";
 import { ChordTab } from "./ChordTab";
@@ -19,6 +25,17 @@ import { LyricsView } from "./LyricsView";
 import { LyricsEditor } from "./LyricsEditor";
 import { TuningProvider } from "./TuningContext";
 import { MediaPlayer } from "./MediaPlayer";
+import { ExportMenu, type ExportFormat } from "./ExportMenu";
+import { BarChart } from "./BarChart";
+import { buildBars, tempoGrid } from "@/lib/bars";
+import { layoutLyrics } from "@/lib/lyricsLayout";
+import {
+  downloadText,
+  safeFilename,
+  toChordPro,
+  toPlainText,
+  type SheetMeta,
+} from "@/lib/chordSheet";
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -110,7 +127,7 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
   const [preferFlats, setPreferFlats] = useState(false);
   const [scrolling, setScrolling] = useState(false);
   const [speed, setSpeed] = useState(2);
-  const [view, setView] = useState<"chords" | "lyrics" | "tab">("chords");
+  const [view, setView] = useState<"chords" | "bars" | "lyrics" | "tab">("chords");
   const [positionSec, setPositionSec] = useState(0);
   const rootRef = useRef<HTMLElement>(null);
   const seekRef = useRef<((s: number) => void) | null>(null);
@@ -262,7 +279,10 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
     setPositionSec(s);
   }, []);
 
-  const offset = transpose - capo;
+  // A whole-guitar retune (E♭/D standard) works like a capo in reverse: the
+  // chart names the shapes you finger, which sound lower.
+  const drop = uniformDrop(tuning);
+  const offset = transpose - capo + drop;
 
   const shownSegments = useMemo<ChordSegment[]>(
     () =>
@@ -274,6 +294,13 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
   );
 
   const shownVocab = useMemo(() => chordVocabulary(shownSegments), [shownSegments]);
+
+  const barSheet = useMemo(() => {
+    const duration = result.source.durationSec;
+    if (result.meter) return buildBars(shownSegments, result.meter, duration);
+    const grid = tempoGrid(result.segments, result.bpm, duration);
+    return grid ? buildBars(shownSegments, grid, duration, "tempo") : null;
+  }, [result.meter, result.segments, result.bpm, result.source.durationSec, shownSegments]);
   const originalKey = result.key ?? null;
   const soundingKey = transposeKey(originalKey, transpose, preferFlats);
   const shapeKey = transposeKey(originalKey, offset, preferFlats);
@@ -286,6 +313,51 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
     );
     return suggestCapo(soundingVocab, transposeKey(originalKey, transpose, preferFlats));
   }, [result.segments, transpose, preferFlats, originalKey, tuning]);
+
+  const tuneDown = useMemo(() => {
+    if (!isStandard(tuning)) return null;
+    const soundingVocab = chordVocabulary(result.segments).map((c) =>
+      transposeChord(c, transpose, preferFlats),
+    );
+    return suggestTuneDown(soundingVocab, transposeKey(originalKey, transpose, preferFlats));
+  }, [result.segments, transpose, preferFlats, originalKey, tuning]);
+
+  // How far the recording sits from A440 — a guitar tuned to a 440 tuner will
+  // clash with it past ~15 cents.
+  const cents = result.tuningCents ?? null;
+  const offPitch = cents !== null && Math.abs(cents) >= 15;
+
+  const exportSheet = useCallback(
+    (format: ExportFormat) => {
+      if (format === "print") {
+        window.print();
+        return;
+      }
+      const meta: SheetMeta = {
+        title: result.source.title ?? result.source.reference,
+        key: soundingKey,
+        bpm: result.bpm ?? null,
+        capo,
+        tuning: isStandard(tuning) ? null : tuning.name,
+      };
+      const layout = lyrics.trim()
+        ? layoutLyrics({
+            segments: shownSegments,
+            durationSec: result.source.durationSec,
+            lyrics,
+            alignment,
+            words: lyricWords,
+          })
+        : null;
+      const name = safeFilename(meta.title);
+      if (format === "chordpro") {
+        downloadText(`${name}.cho`, toChordPro(meta, shownSegments, layout));
+      } else {
+        downloadText(`${name}.txt`, toPlainText(meta, shownSegments, layout, barSheet));
+      }
+    },
+    [result, soundingKey, capo, tuning, lyrics, shownSegments, alignment, lyricWords, barSheet],
+  );
 
   // Auto-scroll the chord sheet.
   useEffect(() => {
@@ -336,8 +408,20 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
         </p>
       </header>
 
+      {/* Printed sheets carry the playing settings the toolbar would show. */}
+      <p className="hidden text-sm print:block">
+        {[
+          soundingKey && `Key: ${soundingKey}`,
+          result.bpm && `${Math.round(result.bpm)} BPM`,
+          capo > 0 && `Capo ${capo}${shapeKey ? ` (shapes in ${shapeKey})` : ""}`,
+          !isStandard(tuning) && `Tuning: ${tuning.name}${drop > 0 ? " (chords named by shape)" : ""}`,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+
       {/* Sticky playing-tools bar */}
-      <div className="sticky top-0 z-10 -mx-4 border-y border-border bg-background/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+      <div className="sticky top-0 z-10 -mx-4 border-y border-border bg-background/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 print:hidden">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <Stepper
             label="Transpose"
@@ -407,6 +491,7 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
             />
             prefer ♭
           </label>
+          <ExportMenu onExport={exportSheet} />
         </div>
 
         {suggestion && (
@@ -423,11 +508,39 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
             )}
           </p>
         )}
+        {tuneDown && (
+          <p className="mt-1 text-xs text-foreground/70">
+            🎚️ Or tune down {tuneDown.semitones === 1 ? "½ step (E♭ standard)" : "1 step (D standard)"}
+            {tuneDown.coversAll
+              ? ` — every chord becomes an open shape${tuneDown.shapeKey ? `, in ${tuneDown.shapeKey}` : ""}: ${tuneDown.shapes.join(" · ")}`
+              : ` — ${tuneDown.openCount} of ${tuneDown.total} shapes become open`}
+            . Many recordings are made this way.
+            <button
+              type="button"
+              onClick={() => {
+                setCapo(0);
+                changeTuning(tuneDown.tuningId);
+              }}
+              className="ml-1.5 font-medium text-accent underline"
+            >
+              use it
+            </button>
+          </p>
+        )}
+        {offPitch && (
+          <p className="mt-1 text-xs text-foreground/70">
+            🎯 This recording is about {Math.abs(Math.round(cents!))} cents{" "}
+            {cents! > 0 ? "sharp" : "flat"} of standard pitch (A440) — tune every string{" "}
+            {cents! > 0 ? "up" : "down"} that much to play along in tune.
+          </p>
+        )}
       </div>
 
-      <MediaPlayer source={result.source} onTime={setPositionSec} seekRef={seekRef} />
+      <div className="print:hidden">
+        <MediaPlayer source={result.source} onTime={setPositionSec} seekRef={seekRef} />
+      </div>
 
-      <div className="grid grid-cols-2 gap-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-4 print:hidden">
         <Stat label="Key" value={soundingKey ?? "—"} />
         <Stat label="Tempo" value={result.bpm ? `${Math.round(result.bpm)} BPM` : "—"} />
         <Stat label="Chords" value={String(shownVocab.length)} />
@@ -445,17 +558,21 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
               />
             ))}
           </div>
-          <p className="text-xs text-foreground/50">
+          <p className="text-xs text-foreground/50 print:hidden">
             Hover a chord to see its finger pattern.
             {capo > 0
               ? ` Shapes shown are for capo ${capo}${shapeKey ? ` (in ${shapeKey})` : ""}.`
               : ""}
-            {!isStandard(tuning) ? ` Fingerings are for ${tuning.name}.` : ""}
+            {drop > 0
+              ? ` Chords are named by the shape you play in ${tuning.name} (they sound ${drop === 1 ? "½ step" : `${drop / 2} step${drop > 2 ? "s" : ""}`} lower).`
+              : !isStandard(tuning)
+                ? ` Fingerings are for ${tuning.name}.`
+                : ""}
           </p>
         </div>
       )}
 
-      <div>
+      <div className="print:hidden">
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-foreground/50">
           Timeline
         </h3>
@@ -468,8 +585,8 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
       </div>
 
       <div className="space-y-3">
-        <div className="flex gap-1 rounded-lg bg-surface-2 p-1 text-sm sm:w-fit">
-          {(["chords", "lyrics", "tab"] as const).map((v) => (
+        <div className="flex gap-1 rounded-lg bg-surface-2 p-1 text-sm sm:w-fit print:hidden">
+          {(["chords", "bars", "lyrics", "tab"] as const).map((v) => (
             <button
               key={v}
               type="button"
@@ -486,6 +603,14 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
         {view === "chords" && (
           <ChordChart segments={shownSegments} positionSec={positionSec} onSeek={seek} />
         )}
+        {view === "bars" &&
+          (barSheet ? (
+            <BarChart sheet={barSheet} positionSec={positionSec} onSeek={seek} />
+          ) : (
+            <p className="text-sm text-foreground/50">
+              No tempo was detected for this track, so it can&apos;t be split into bars.
+            </p>
+          ))}
         {view === "tab" && (
           <ChordTab
             tab={tab}
@@ -535,7 +660,7 @@ export function ResultView({ result }: { result: SavedAnalysis }) {
           ))}
       </div>
 
-      <details className="text-xs text-foreground/50">
+      <details className="text-xs text-foreground/50 print:hidden">
         <summary className="cursor-pointer">Engine details</summary>
         <pre className="mt-2 overflow-x-auto rounded bg-black/5 p-3 dark:bg-white/5">
           {JSON.stringify(result.engine, null, 2)}

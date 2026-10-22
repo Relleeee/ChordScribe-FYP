@@ -27,11 +27,24 @@ class EngineInfo(BaseModel):
     params: dict[str, float | str | bool]
 
 
+class MeterInfo(BaseModel):
+    beats: list[float] = Field(description="Beat times in seconds")
+    beatsPerBar: int = Field(description="3 or 4")
+    firstDownbeat: int = Field(description="Index into beats of the first bar line")
+    confidence: float = Field(
+        ge=0.0, le=1.0, description="Fraction of chord changes that land on a bar line"
+    )
+
+
 class AnalysisResult(BaseModel):
     source: SourceInfo
     bpm: float | None = None
     key: str | None = None
     segments: list[ChordSegment]
+    meter: MeterInfo | None = None
+    tuningCents: float | None = Field(
+        default=None, description="Reference-pitch offset from A440 in cents (+ = sharp)"
+    )
     engine: EngineInfo
 
 

@@ -10,3 +10,5 @@ chordscribe_*/
 *.mp3
 *.mp4
 .cache/
+eval/data/
+

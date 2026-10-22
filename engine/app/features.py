@@ -22,6 +22,11 @@ class Features:
     silence_mask: np.ndarray    # (n_frames,) bool
     duration_sec: float
     bpm: float | None
+    # Reference-pitch offset from A440, in cents (+ = sharp).
+    tuning_cents: float = 0.0
+    # Beat grid (seconds) and onset strength at each beat — for bar lines.
+    beat_times: np.ndarray | None = None
+    beat_strength: np.ndarray | None = None
 
 
 def _load_audio(path: str, sample_rate: int) -> tuple[np.ndarray, int]:
@@ -65,10 +70,13 @@ def extract(path: str, params: AnalysisParams) -> Features:
     rms = librosa.util.fix_length(rms, size=chroma.shape[1])
 
     bpm: float | None = None
+    beat_times: np.ndarray | None = None
+    beat_strength: np.ndarray | None = None
     if params.beat_sync:
         try:
+            onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=params.hop_length)
             tempo, beats = librosa.beat.beat_track(
-                y=y, sr=sr, hop_length=params.hop_length, units="frames"
+                onset_envelope=onset_env, sr=sr, hop_length=params.hop_length, units="frames"
             )
             bpm = float(np.atleast_1d(tempo)[0])
             if len(beats) >= 2:
@@ -76,6 +84,7 @@ def extract(path: str, params: AnalysisParams) -> Features:
                 beat_times = librosa.frames_to_time(
                     beats, sr=sr, hop_length=params.hop_length
                 )
+                beat_strength = onset_env[np.minimum(beats, len(onset_env) - 1)]
                 frame_times = _sync_frame_times(beat_times, duration)
                 rms = librosa.util.sync(rms[np.newaxis, :], beats, aggregate=np.median)[0]
         except Exception:  # noqa: BLE001 - beat tracking is best-effort
@@ -90,6 +99,10 @@ def extract(path: str, params: AnalysisParams) -> Features:
         silence_mask=silence_mask[: chroma.shape[1]],
         duration_sec=duration,
         bpm=bpm,
+        # estimate_tuning works in fractions of a 12-TET bin, i.e. of a semitone.
+        tuning_cents=float(tuning) * 100,
+        beat_times=beat_times,
+        beat_strength=beat_strength,
     )
 
 

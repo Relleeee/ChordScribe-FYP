@@ -50,6 +50,28 @@
   }
 }
 
+/* Printing / "Save as PDF": always the light paper palette, no page glow. The
+   app chrome opts out with Tailwind's `print:hidden`. */
+@media print {
+  :root {
+    --background: #ffffff;
+    --foreground: #111111;
+    --surface: #ffffff;
+    --surface-2: #ffffff;
+    --border-color: rgba(0, 0, 0, 0.18);
+    --accent: #9a4a05;
+    --accent-soft: rgba(154, 74, 5, 0.08);
+  }
+  body {
+    background: #fff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  @page {
+    margin: 14mm;
+  }
+}
+
 /* Scrollbars that match the theme instead of the OS default. */
 .themed-scrollbar {
   scrollbar-width: thin;

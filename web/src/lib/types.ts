@@ -25,6 +25,17 @@ export interface SourceInfo {
 }
 
 /** The full result returned by the engine for one track. */
+/** Mirrors `MeterInfo` in `engine/app/schemas.py`. */
+export interface MeterInfo {
+  /** Beat times, seconds. */
+  beats: number[];
+  beatsPerBar: number;
+  /** Index into `beats` of the first bar line (beats before it are a pickup). */
+  firstDownbeat: number;
+  /** Fraction of chord changes that land on a bar line (0–1). */
+  confidence: number;
+}
+
 export interface AnalysisResult {
   source: SourceInfo;
   /** Estimated tempo in BPM, if the engine computed one. */
@@ -33,6 +44,11 @@ export interface AnalysisResult {
   key?: string;
   /** Ordered, non-overlapping chord segments covering the track. */
   segments: ChordSegment[];
+  /** Beat grid + estimated time signature, for the barred chord sheet. Absent on
+   *  analyses made before the engine computed it. */
+  meter?: MeterInfo | null;
+  /** How far the recording's reference pitch is from A440, in cents (+ = sharp). */
+  tuningCents?: number | null;
   /** Engine version + parameters used, for reproducibility in evaluation. */
   engine: {
     version: string;
@@ -128,3 +144,12 @@ export interface ApiError {
   error: string;
   detail?: string;
 }
+
+/** Engine pipeline steps, in order — mirrors the `on_stage` calls in `engine/app/pipeline.py`. */
+export type AnalysisStage = "fetch" | "decode" | "features" | "separate" | "chords" | "key";
+
+/** One line of the NDJSON progress stream from `POST /api/analyze` (Accept: application/x-ndjson). */
+export type AnalyzeEvent =
+  | { type: "stage"; stage: AnalysisStage }
+  | { type: "result"; analysis: SavedAnalysis }
+  | { type: "error"; error: string; detail?: string };

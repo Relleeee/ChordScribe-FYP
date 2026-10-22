@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import type { AnalysisSummary, SessionUser } from "@/lib/types";
 
 interface Props {
@@ -23,9 +23,18 @@ function relativeDate(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+// Dates depend on the clock and the browser locale, so they're only rendered
+// after hydration — otherwise the server's en-US output mismatches the client.
+const noopSubscribe = () => () => {};
+function useHydrated() {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
+
 export function Sidebar({ user, analyses, activeId, onSelect, onDelete, onRename, onNew }: Props) {
+  const hydrated = useHydrated();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function startEdit(a: AnalysisSummary) {
@@ -75,7 +84,36 @@ export function Sidebar({ user, analyses, activeId, onSelect, onDelete, onRename
               a.id === activeId ? "bg-accent-soft" : "hover:bg-black/5 dark:hover:bg-white/5"
             }`}
           >
-            {editingId === a.id ? (
+            {confirmingId === a.id ? (
+              <div
+                className="flex min-w-0 flex-1 items-center gap-2"
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setConfirmingId(null);
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate text-xs text-foreground/70">
+                  Delete <span className="font-medium text-foreground">{a.title}</span>?
+                </span>
+                <button
+                  type="button"
+                  autoFocus
+                  onClick={() => {
+                    setConfirmingId(null);
+                    onDelete(a.id);
+                  }}
+                  className="shrink-0 rounded bg-red-600 px-2 py-0.5 text-xs font-semibold text-white hover:bg-red-500"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingId(null)}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-xs text-foreground/60 hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : editingId === a.id ? (
               <input
                 ref={inputRef}
                 value={draft}
@@ -94,12 +132,12 @@ export function Sidebar({ user, analyses, activeId, onSelect, onDelete, onRename
                 <div className="truncate font-medium">{a.title}</div>
                 <div className="truncate text-xs text-foreground/50">
                   {a.key ?? "key ?"} · {a.bpm ? `${Math.round(a.bpm)} BPM · ` : ""}
-                  {relativeDate(a.createdAt)}
+                  {hydrated ? relativeDate(a.createdAt) : ""}
                 </div>
               </button>
             )}
 
-            {editingId !== a.id && (
+            {editingId !== a.id && confirmingId !== a.id && (
               <div className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
                 <button
                   type="button"
@@ -114,7 +152,7 @@ export function Sidebar({ user, analyses, activeId, onSelect, onDelete, onRename
                 </button>
                 <button
                   type="button"
-                  onClick={() => onDelete(a.id)}
+                  onClick={() => setConfirmingId(a.id)}
                   aria-label={`Delete ${a.title}`}
                   className="rounded p-1 text-foreground/40 hover:text-red-500"
                 >
